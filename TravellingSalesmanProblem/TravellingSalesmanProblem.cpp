@@ -2,10 +2,10 @@
 #include "Node.h"
 
 using namespace std;
-
+const int N = 13;
 vector<double> distances;
 
-int read_tsp_file(const char* fname, float(&distance_matrix)[N][N])
+int read_tsp_file(const char* fname, std::vector<std::vector<float>> &t_dist_matrix)
 {
 	std::ifstream file(fname);
 	vector<double> xs, ys;
@@ -39,22 +39,27 @@ int read_tsp_file(const char* fname, float(&distance_matrix)[N][N])
 
 		distances.resize(n * n);
 
+		for(int i = 0; i < N; i++)
+		{
+			std::vector<float> row;
+			for(int j = 0; j < N; j++)
+			{
+				row.push_back(FLT_MAX);
+			}
+			t_dist_matrix.push_back(row);
+		}
+
 		//TODO: calculate distance matrix
 		for (int row = 0; row < N; row++)
 		{
 			for (int col = 0; col < N; col++)
 			{
-				if (row == col)
-				{
-					distance_matrix[row][col] = FLT_MAX;
-				}
-				else
+				if (row != col)
 				{
 					float xDist = (xs[col] - xs[row]) * (xs[col] - xs[row]);
 					float yDist = (ys[col] - ys[row]) * (ys[col] - ys[row]);
 					float distance = sqrtf(xDist + yDist);
-					distance_matrix[row][col] = distance;
-
+					t_dist_matrix[row][col] = distance;
 				}
 			}
 		}
@@ -94,7 +99,7 @@ int read_tsp_file(const char* fname, float(&distance_matrix)[N][N])
  *
  * \return Výsledná cena nejkratší cesty
  */
-float brute_force_tsp(float (& distance_matrix)[N][N], int starting_point, bool parallel)
+float brute_force_tsp(std::vector<std::vector<float>>& t_distance_matrix, int starting_point, bool parallel)
 {
 	vector<int> permutations;
 	float min_distances[N - 1];
@@ -128,11 +133,11 @@ float brute_force_tsp(float (& distance_matrix)[N][N], int starting_point, bool 
 			for (int i = 0; i < local_perm.size(); i++)
 			{
 				int neighborCity = local_perm[i];
-				local_total_dist += distance_matrix[local_cur_city][neighborCity];
+				local_total_dist += t_distance_matrix[local_cur_city][neighborCity];
 				local_cur_city = neighborCity;
 			}
 
-			local_total_dist += distance_matrix[local_cur_city][local_start];
+			local_total_dist += t_distance_matrix[local_cur_city][local_start];
 
 			if (local_total_dist <= local_min_dist)
 			{
@@ -151,18 +156,6 @@ float brute_force_tsp(float (& distance_matrix)[N][N], int starting_point, bool 
 	return min_dist;
 }
 
-/**
- * Nejprve inicializuje a naète vektor všech mìst, které nejsou poèáteèní mìsto
- *
- * Poté redukuje matici, vytvoøí koøenový uzel a postupnì v každém cyklu nalezne nejlevnìjšího potomka,
- * kterého pak prohledává. Za každým prohledáním z vectoru mìst odebere nejlevnìjší nalezené mìsto.
- * Cyklus konèí v pøípadì, že všechna mìsta byla prozkoumána, takže se pokraèuje traverzí nejlevnìjších mìst od
- * koøenového uzlu, abych si mohl naleznout výslednou permutaci mìst, které musím projít. Nesmím zapomenout pøidat
- * poèáteèní mìsto do permutace na konec, abych mohl také urèit cenu cesty z posledního mìsta do poèáteèního.
- *
- * \return Výsledná cena nejkratší cesty
- */
-
 class CompareCost {
 public:
 	bool operator()(Node* t1, Node* t2)
@@ -171,16 +164,15 @@ public:
 		return false;
 	}
 };
-float branch_n_bound_test(float(&distance_matrix)[N][N], int starting_point)
+float branch_n_bound_serial(std::vector<std::vector<float>> &t_distance_matrix, int starting_point)
 {
 	std::vector<int> vc = { };
 	for (int i = 0; i < N; i++)
 	{
 		vc.push_back(i);
 	}
-	float tmp[N][N];
-	memcpy(tmp, distance_matrix, SIZE_BYTES);
-	Node* root = new Node(tmp, vc, std::vector<int>{}, starting_point, 0, -1);
+	std::vector<std::vector<float>> temp_matrix = t_distance_matrix;
+	Node* root = new Node(temp_matrix, vc, std::vector<int>{}, starting_point, 0, -1);
 	vector<Node*> priority_queue;
 	Node* current = nullptr;
 	priority_queue.push_back(root);
@@ -196,29 +188,84 @@ float branch_n_bound_test(float(&distance_matrix)[N][N], int starting_point)
 		std::vector<int> path = current->path;
 		path.push_back(current->idx);
 
-		float tmp_matrix[N][N];
-		memcpy(tmp_matrix, current->matrix, SIZE_BYTES);
+		std::vector<std::vector<float>> mat = current->distance_matrix;
 
 		for (auto& city : current->explorable)
 		{
-			Node* child = new Node(tmp_matrix, current->explorable, path, city, current->bound, current->idx);
+			Node* child = new Node(mat, current->explorable, path, city, current->bound, current->idx);
 			priority_queue.push_back(child);
 		}
 	}
-	vector<int> final_path = current->path;
-	final_path.push_back(current->idx);
-	final_path.push_back(starting_point);
-	float total_cost = 0.0f;
-	for(auto&a : final_path)
-	{ 
-		std::cout << a << std::endl;
-	}
-	for(int i = 0; i < final_path.size() - 1; i++)
-	{
-		total_cost += distance_matrix[final_path[i]][final_path[i + 1]];
-	}
+
 	
-	return total_cost;
+	return current->computeTotalCost(t_distance_matrix).second;
+}
+
+float branch_n_bound_parallel(std::vector<std::vector<float>>& t_distance_matrix, int starting_point)
+{
+	std::vector<int> vc = { };
+	for (int i = 0; i < N; i++)
+	{
+		vc.push_back(i);
+	}
+	std::vector<std::vector<float>> temp_matrix = t_distance_matrix;
+	Node* root = new Node(temp_matrix, vc, std::vector<int>{}, starting_point, 0, -1);
+
+	std::vector<std::pair<std::vector<int>, float>> final_results;
+	for(int i = 0; i < root->explorable.size(); i++)
+	{
+		final_results.push_back(std::make_pair(std::vector<int>{}, 0.0f));
+	}
+
+
+#pragma omp parallel for
+	for(int i = 0; i < root->explorable.size(); i++)
+	{
+		vector<Node*> priority_queue;
+		Node* current = nullptr;
+
+		std::vector<std::vector<float>> mat = root->distance_matrix;
+		std::vector<int> path = root->path;
+		path.push_back(root->idx);
+
+		Node* local_root = new Node(mat, root->explorable, path, root->explorable[i], root->bound, root->idx);
+		priority_queue.push_back(local_root);
+		while (!priority_queue.empty())
+		{
+			std::sort(priority_queue.begin(), priority_queue.end(), CompareCost());
+			current = priority_queue.back();
+			priority_queue.pop_back();
+			if (current->explorable.empty())
+			{
+				break;
+			}
+			std::vector<int> path = current->path;
+			path.push_back(current->idx);
+
+			std::vector<std::vector<float>> mat = current->distance_matrix;
+
+			for (auto& city : current->explorable)
+			{
+				Node* child = new Node(mat, current->explorable, path, city, current->bound, current->idx);
+				priority_queue.push_back(child);
+			}
+		}
+		final_results[i] = current->computeTotalCost(t_distance_matrix);
+	}
+	int idx = 0;
+	float final_cost = FLT_MAX;
+	for(int i = 0; i < final_results.size(); i++)
+	{
+		if(final_results[i].second < final_cost)
+		{
+			final_cost = final_results[i].second;
+			idx = i;
+		}
+	}
+
+
+
+	return final_results[idx].second;
 }
 
 float branch_n_bound(float (&distance_matrix)[N][N], int starting_point)
@@ -269,31 +316,62 @@ float branch_n_bound(float (&distance_matrix)[N][N], int starting_point)
 	return 0.0f;
 }
 
-void run_tsp_serial(float(&distance_matrix)[N][N])
+void test()
+{
+	std::vector<std::pair<std::vector<int>, float>> final_results = {
+		std::make_pair(std::vector<int>{1, 2, 3}, 32.0f),
+		std::make_pair(std::vector<int>{1, 2, 3}, 32.0f),
+		std::make_pair(std::vector<int>{1, 2, 3}, 32.0f),
+		std::make_pair(std::vector<int>{1, 2, 3}, 32.0f),
+		std::make_pair(std::vector<int>{1, 2, 3}, 32.0f),
+		std::make_pair(std::vector<int>{1, 2, 3}, 32.0f),
+		std::make_pair(std::vector<int>{1, 2, 3}, 32.0f),
+		std::make_pair(std::vector<int>{1, 2, 3}, 32.0f),
+		std::make_pair(std::vector<int>{1, 2, 3}, 32.0f),
+		std::make_pair(std::vector<int>{1, 2, 3}, 32.0f)
+	};
+#pragma omp parallel for
+	for(int i = 0; i < 10; i++)
+	{
+		final_results[i] = std::make_pair(std::vector<int>{i, i, i}, 1.0f * i);
+	}
+	return;
+}
+
+void run_tsp_serial(std::vector<std::vector<float>>& t_dist_matrix)
 {
 	auto start = chrono::high_resolution_clock::now();
-	float cost = brute_force_tsp(distance_matrix, 0, false);
+	float cost = brute_force_tsp(t_dist_matrix, 0, false);
 	auto end = chrono::high_resolution_clock::now();
 	auto duration = chrono::duration_cast<chrono::seconds>(end - start);
 	cout << "Serial brute force ran: " << duration.count() << "s with total cost: " << cost << endl;
 }
 
-void run_tsp_parallel (float(&distance_matrix)[N][N])
+void run_tsp_parallel (std::vector<std::vector<float>>& t_dist_matrix)
 {
 	auto start = chrono::high_resolution_clock::now();
-	float cost = brute_force_tsp(distance_matrix, 0, true);
+	float cost = brute_force_tsp(t_dist_matrix, 0, true);
 	auto end = chrono::high_resolution_clock::now();
 	auto duration = chrono::duration_cast<chrono::seconds>(end - start);
 	cout << "Parallel brute force ran: " << duration.count() << "s with total cost: " << cost << endl;
 }
 
-void run_tsp_branch_n_bound(float(&distance_matrix)[N][N])
+void run_tsp_branch_n_bound_serial(std::vector<std::vector<float>> &t_dist_matrix)
 {
 	auto start = chrono::high_resolution_clock::now();
-	float cost = branch_n_bound_test(distance_matrix, 0);
+	float cost = branch_n_bound_serial(t_dist_matrix, 0);
 	auto end = chrono::high_resolution_clock::now();
 	auto duration = chrono::duration_cast<chrono::seconds>(end - start);
-	cout << "Branch and bound ran: " << duration.count() <<"s with total cost: " << cost << endl;
+	cout << "Serial branch and bound ran: " << duration.count() <<"s with total cost: " << cost << endl;
+}
+
+void run_tsp_branch_n_bound_parallel(std::vector<std::vector<float>>& t_dist_matrix)
+{
+	auto start = chrono::high_resolution_clock::now();
+	float cost = branch_n_bound_parallel(t_dist_matrix, 0);
+	auto end = chrono::high_resolution_clock::now();
+	auto duration = chrono::duration_cast<chrono::seconds>(end - start);
+	cout << "Parallel and bound ran: " << duration.count() << "s with total cost: " << cost << endl;
 }
 int main()
 {
@@ -305,7 +383,7 @@ int main()
 		{19.0f, 6.0f, 18.0f, FLT_MAX, 3.0f},
 		{16.0f, 4.0f, 7.0f, 16.0f, FLT_MAX}
 	};*/
-	float distance_matrix[N][N];
+	std::vector<std::vector<float>> distance_matrix;
 	if (!(read_tsp_file("ulysses22.tsp.txt", distance_matrix)))
 	{
 		std::cout << "Could not read the file, exiting with code -1" << std::endl;
@@ -314,8 +392,10 @@ int main()
 
 	//branch_n_bound_test(distance_matrix, 0);
 
-	//run_tsp_serial(distance_matrix);
+	run_tsp_serial(distance_matrix);
 	run_tsp_parallel(distance_matrix);
-	//run_tsp_branch_n_bound(distance_matrix);
+	run_tsp_branch_n_bound_serial(distance_matrix);
+	run_tsp_branch_n_bound_parallel(distance_matrix);
+	//test();
 	return 0;
 }
