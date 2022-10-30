@@ -1,28 +1,22 @@
 #ifndef OPS_H_
 #define OPS_H_
-
-#ifndef N
-#define N 13
-#endif
-#ifndef SIZE_BYTES
-#define SIZE_BYTES N*N*sizeof(float)
-#endif
+const int N = 11;
+const int SIZE_BYTES = N * N * sizeof(float);
+#include "stdafx.h"
 namespace ops
 {
 
-	float reduce_row(float(&dist_matrix)[N][N], int row);
+	float reduce_row(std::vector<float> &distance_matrix , int row);
 
-	float reduce_col(float(&dist_matrix)[N][N], int col);
+	float reduce_col(std::vector<float>& distance_matrix, int col);
 
-	float reduce_matrix(float(&dist_matrix)[N][N]);
+	float reduce_matrix(std::vector<float>& distance_matrix);
 
-	void set_inf_row_col(float(&dist_matrix)[N][N], int row, int col);
+	void set_inf_col(std::vector<float>& distance_matrix, int col);
 
-	void set_inf_col(float(&dist_matrix)[N][N], int col);
+	void set_inf_row(std::vector<float>& distance_matrix, int row);
 
-	void set_inf_row(float(&dist_matrix)[N][N], int row);
-
-	void set_mat_value(float(&dist_matrix)[N][N], int row, int col, float val);
+	void set_mat_value(std::vector<float>& distance_matrix, int row, int col, float val);
 
 
 }

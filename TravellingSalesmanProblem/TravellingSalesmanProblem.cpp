@@ -1,6 +1,5 @@
 #include <queue>
-
-#include "stdafx.h"
+#include "Node.h"
 
 using namespace std;
 
@@ -100,7 +99,7 @@ float brute_force_tsp(float (& distance_matrix)[N][N], int starting_point, bool 
 	vector<int> permutations;
 	float min_distances[N - 1];
 
-	for(int i = 0; i < N - 1; i++)
+	for (int i = 0; i < N - 1; i++)
 	{
 		min_distances[i] = FLT_MAX;
 	}
@@ -111,40 +110,40 @@ float brute_force_tsp(float (& distance_matrix)[N][N], int starting_point, bool 
 			continue;
 		permutations.push_back(i);
 	}
-	
+
 
 #pragma omp parallel for num_threads(16) if(parallel)
-		for (int cycle = 0; cycle < N-1; cycle++)
+	for (int cycle = 0; cycle < N - 1; cycle++)
+	{
+		float local_min_dist = FLT_MAX;
+		int local_start = starting_point;
+		int local_cur_city = local_start;
+		vector<int> local_perm = permutations;
+		std::rotate(local_perm.begin(), local_perm.begin() + cycle, local_perm.begin() + cycle + 1);
+
+		do
 		{
-			float local_min_dist = FLT_MAX;
-			int local_start = starting_point;
-			int local_cur_city = local_start;
-			vector<int> local_perm = permutations;
-			std::rotate(local_perm.begin(), local_perm.begin() + cycle, local_perm.begin() + cycle + 1);
-
-			do
+			float local_total_dist = 0.0f;
+			local_cur_city = local_start;
+			for (int i = 0; i < local_perm.size(); i++)
 			{
-				float local_total_dist = 0.0f;
-				local_cur_city = local_start;
-				for (int i = 0; i < local_perm.size(); i++)
-				{
-					int neighborCity = local_perm[i];
-					local_total_dist += distance_matrix[local_cur_city][neighborCity];
-					local_cur_city = neighborCity;
-				}
+				int neighborCity = local_perm[i];
+				local_total_dist += distance_matrix[local_cur_city][neighborCity];
+				local_cur_city = neighborCity;
+			}
 
-				local_total_dist += distance_matrix[local_cur_city][local_start];
+			local_total_dist += distance_matrix[local_cur_city][local_start];
 
-				if (local_total_dist <= local_min_dist)
-				{
-					local_min_dist = local_total_dist;
-				}
+			if (local_total_dist <= local_min_dist)
+			{
+				local_min_dist = local_total_dist;
+			}
 
-			} while (next_permutation(local_perm.begin() + 1, local_perm.end()));
-			min_distances[cycle] = local_min_dist;
-		}
+		} while (next_permutation(local_perm.begin() + 1, local_perm.end()));
+		min_distances[cycle] = local_min_dist;
+	}
 	float min_dist = FLT_MAX;
-	for(int i = 0; i < N - 1; i++)
+	for (int i = 0; i < N - 1; i++)
 	{
 		min_dist = min(min_dist, min_distances[i]);
 	}
@@ -181,26 +180,45 @@ float branch_n_bound_test(float(&distance_matrix)[N][N], int starting_point)
 	}
 	float tmp[N][N];
 	memcpy(tmp, distance_matrix, SIZE_BYTES);
-	float bound = ops::reduce_matrix(distance_matrix);
-	Node* root = new Node(starting_point, 0.0f, distance_matrix, std::vector<int>{}, bound);
-	Node* curr_node = root;
-
-	while (true)
+	Node* root = new Node(tmp, vc, std::vector<int>{}, starting_point, 0, -1);
+	vector<Node*> priority_queue;
+	Node* current = nullptr;
+	priority_queue.push_back(root);
+	while (!priority_queue.empty())
 	{
-		Node* node = curr_node->solveChildren(vc);
-		vc.erase(std::remove(vc.begin(), vc.end(), node->idx), vc.end());
-		curr_node = node;
-		if (vc.empty())
+		std::sort(priority_queue.begin(), priority_queue.end(), CompareCost());
+		current = priority_queue.back();
+		priority_queue.pop_back();
+		if(current->explorable.empty())
+		{
 			break;
+		}
+		std::vector<int> path = current->path;
+		path.push_back(current->idx);
+
+		float tmp_matrix[N][N];
+		memcpy(tmp_matrix, current->matrix, SIZE_BYTES);
+
+		for (auto& city : current->explorable)
+		{
+			Node* child = new Node(tmp_matrix, current->explorable, path, city, current->bound, current->idx);
+			priority_queue.push_back(child);
+		}
 	}
-	std::vector<int> path = root->getPath();
-	path.push_back(0);
-	float cost = 0.0f;
-	for (int i = 0; i < path.size() - 1; i++)
+	vector<int> final_path = current->path;
+	final_path.push_back(current->idx);
+	final_path.push_back(starting_point);
+	float total_cost = 0.0f;
+	for(auto&a : final_path)
+	{ 
+		std::cout << a << std::endl;
+	}
+	for(int i = 0; i < final_path.size() - 1; i++)
 	{
-		cost += tmp[path[i]][path[i + 1]];
+		total_cost += distance_matrix[final_path[i]][final_path[i + 1]];
 	}
-	return cost;
+	
+	return total_cost;
 }
 
 float branch_n_bound(float (&distance_matrix)[N][N], int starting_point)
@@ -219,7 +237,7 @@ float branch_n_bound(float (&distance_matrix)[N][N], int starting_point)
 	 *
 	 *
 	 */
-	std::vector<int> vc = { };
+	/*std::vector<int> vc = {};
 	for (int i = 0; i < N; i++)
 	{
 		if (i == starting_point)
@@ -247,7 +265,8 @@ float branch_n_bound(float (&distance_matrix)[N][N], int starting_point)
 	{
 		cost += tmp[path[i]][path[i + 1]];
 	}
-	return cost;
+	return cost;*/
+	return 0.0f;
 }
 
 void run_tsp_serial(float(&distance_matrix)[N][N])
@@ -271,33 +290,32 @@ void run_tsp_parallel (float(&distance_matrix)[N][N])
 void run_tsp_branch_n_bound(float(&distance_matrix)[N][N])
 {
 	auto start = chrono::high_resolution_clock::now();
-	float cost = branch_n_bound(distance_matrix, 0);
+	float cost = branch_n_bound_test(distance_matrix, 0);
 	auto end = chrono::high_resolution_clock::now();
 	auto duration = chrono::duration_cast<chrono::seconds>(end - start);
 	cout << "Branch and bound ran: " << duration.count() <<"s with total cost: " << cost << endl;
 }
 int main()
 {
+	/*float distance_matrix1[N][N] =
+	{
+		{FLT_MAX, 20.0f, 30.0f, 10.0f, 11.0f},
+		{15.0f, FLT_MAX, 16.0f, 4.0f, 2.0f},
+		{3.0f, 5.0f, FLT_MAX, 2.0f, 4.0f},
+		{19.0f, 6.0f, 18.0f, FLT_MAX, 3.0f},
+		{16.0f, 4.0f, 7.0f, 16.0f, FLT_MAX}
+	};*/
 	float distance_matrix[N][N];
-	if(!(read_tsp_file("ulysses22.tsp.txt", distance_matrix)))
+	if (!(read_tsp_file("ulysses22.tsp.txt", distance_matrix)))
 	{
 		std::cout << "Could not read the file, exiting with code -1" << std::endl;
 		exit(-1);
 	}
-	Node* node1 = new Node(0);
-	node1->bound = 25;
-	Node* node2 = new Node(0);
-	node2->bound = 50;
-	Node* node3 = new Node(0);
-	node3->bound = 75;
-	vector<Node*> pq;
-	pq.push_back(node1);
-	pq.push_back(node3);
-	pq.push_back(node2);
-	std::sort(pq.begin(), pq.end(), CompareCost());
-	pq.pop_back();
+
+	//branch_n_bound_test(distance_matrix, 0);
+
 	//run_tsp_serial(distance_matrix);
-	//run_tsp_parallel(distance_matrix);
+	run_tsp_parallel(distance_matrix);
 	//run_tsp_branch_n_bound(distance_matrix);
 	return 0;
 }

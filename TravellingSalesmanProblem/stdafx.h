@@ -8,4 +8,3 @@
 #include <string>
 #include <omp.h>
 #include <vector>
-#include "Node.h"
